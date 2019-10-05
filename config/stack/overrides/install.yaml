@@ -3,4 +3,4 @@ spec:
     spec:
       containers:
       - name: "crossplane-sample-stack-wordpress-controller"
-        image: "localhost:5000/crossplane/sample-stack-wordpress"
+        image: "localhost:5000/crossplane/sample-stack-simple-template"

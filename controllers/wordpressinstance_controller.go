@@ -34,6 +34,8 @@ import (
 	wordpressv1alpha1 "github.com/crossplaneio/sample-stack-wordpress/api/v1alpha1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"io/ioutil"
 )
 
 // WordpressInstanceReconciler reconciles a WordpressInstance object
@@ -63,138 +65,19 @@ func (r *WordpressInstanceReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 	instanceUID := i.ObjectMeta.GetUID()
 	instanceNamespace := i.ObjectMeta.GetNamespace()
 
-	rawTemplate := `---
-apiVersion: compute.crossplane.io/v1alpha1
-kind: KubernetesCluster
-metadata:
-  name: wordpress-cluster-{{ .UID }}
-  namespace: {{ .namespace }}
-  labels:
-    stack: sample-stack-wordpress
-spec:
-  writeConnectionSecretToRef:
-    name: wordpress-demo-cluster-{{ .UID }}
----
-apiVersion: database.crossplane.io/v1alpha1
-kind: MySQLInstance
-metadata:
-  name: wordpress-mysql-{{ .UID }}
-  namespace: {{ .namespace }}
-  labels:
-    stack: sample-stack-wordpress
-spec:
-  engineVersion: "5.7"
-  # A secret is exported by providing the secret name
-  # to export it under. This is the name of the secret
-  # in the crossplane cluster, and it's scoped to this claim's namespace.
-  writeConnectionSecretToRef:
-    name: sql-{{ .UID }}
----
-apiVersion: workload.crossplane.io/v1alpha1
-kind: KubernetesApplication
-metadata:
-  name: wordpress-app-{{ .UID }}
-  namespace: {{ .namespace }}
-  labels:
-    stack: sample-stack-wordpress
-spec:
-  resourceSelector:
-    matchLabels:
-      stack: sample-stack-wordpress
-  clusterSelector:
-    matchLabels:
-      stack: sample-stack-wordpress
-  resourceTemplates:
-  - metadata:
-      name: wordpress-demo-namespace-{{ .UID }}
-      labels:
-        stack: sample-stack-wordpress
-    spec:
-      template:
-        apiVersion: v1
-        kind: Namespace
-        metadata:
-          name: wordpress
-          labels:
-            app: wordpress
-  - metadata:
-      name: wordpress-demo-deployment-{{ .UID }}
-      labels:
-        stack: sample-stack-wordpress
-    spec:
-      secrets:
-        # This must match the writeConnectionSecretToRef field
-        # on the database claim; it is the name of the secret to
-        # pull from the crossplane cluster, from this Application's namespace.
-        - name: sql-{{ .UID }}
-      template:
-        apiVersion: apps/v1
-        kind: Deployment
-        metadata:
-          namespace: wordpress
-          name: wordpress
-          labels:
-            app: wordpress
-        spec:
-          selector:
-            matchLabels:
-              app: wordpress
-          template:
-            metadata:
-              labels:
-                app: wordpress
-            spec:
-              containers:
-                - name: wordpress
-                  image: wordpress:4.6.1-apache
-                  env:
-                    - name: WORDPRESS_DB_HOST
-                      valueFrom:
-                        secretKeyRef:
-                          # This is the name of the secret to use to consume the secret
-                          # within the managed cluster. The reason it's different from the
-                          # name of the secret above is because within the managed cluster,
-                          # a crossplane-managed secret is written as '{metadata.name}-{secretname}'.
-                          # The metadata name is specified above for this resource, and so is
-                          # the secret name.
-                          name: wordpress-demo-deployment-{{ .UID }}-sql-{{ .UID }}
-                          key: endpoint
-                    - name: WORDPRESS_DB_USER
-                      valueFrom:
-                        secretKeyRef:
-                          name: wordpress-demo-deployment-{{ .UID }}-sql-{{ .UID }}
-                          key: username
-                    - name: WORDPRESS_DB_PASSWORD
-                      valueFrom:
-                        secretKeyRef:
-                          name: wordpress-demo-deployment-{{ .UID }}-sql-{{ .UID }}
-                          key: password
-                  ports:
-                    - containerPort: 80
-                      name: wordpress
-  - metadata:
-      name: wordpress-demo-service-{{ .UID }}
-      labels:
-        stack: sample-stack-wordpress
-    spec:
-      template:
-        apiVersion: v1
-        kind: Service
-        metadata:
-          namespace: wordpress
-          name: wordpress
-          labels:
-            app: wordpress
-        spec:
-          ports:
-            - port: 80
-          selector:
-            app: wordpress
-          type: LoadBalancer
-`
-	r.Log.V(2).Info("Using template", "template", rawTemplate)
+	rawTemplate, err := ioutil.ReadFile("/.registry/resources/templates/all.yaml")
 
-	tmpl, err := template.New("wordpress").Parse(rawTemplate)
+	if err != nil {
+		r.Log.V(0).Info("Error reading template file!", "err", err)
+		return ctrl.Result{}, err
+	}
+
+	// TODO do we need to worry about encoding here?
+	rawTemplateString := string(rawTemplate)
+
+	r.Log.V(2).Info("Using template", "template", rawTemplateString)
+
+	tmpl, err := template.New("wordpress").Parse(rawTemplateString)
 	if err != nil {
 		r.Log.V(0).Info("Error creating template!", "err", err)
 	}

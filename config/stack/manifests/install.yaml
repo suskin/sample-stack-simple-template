@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: "crossplane-sample-stack-wordpress-controller"
-        image: "crossplane/sample-stack-wordpress"
+        image: "crossplane/sample-stack-simple-template"
         env:
         - name: POD_NAME
           valueFrom:
